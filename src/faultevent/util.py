@@ -50,7 +50,7 @@ def best_threshold(data: Signal, orda, ordb,
     scores = np.zeros_like(thrs, dtype=float)
     for i, thr in enumerate(thrs):
         cmp = Comparison.from_comparator(data, thr, hys*thr)
-        if dettype=="mf": spos = np.asarray(matched_filter_location_estimates(cmp))
+        if dettype=="mf": spos, _ = np.asarray(matched_filter_location_estimates(cmp))
         elif dettype=="ed": spos = np.asarray(energy_detector_location_estimates(cmp))
         else: raise ValueError
         _, mag = find_order(spos, orda, ordb)
@@ -86,7 +86,7 @@ def estimate_signature(data: Signal, x: npt.ArrayLike,
         shifts = np.zeros_like(sampind)
         running_sum = data.y[sampind[0]: sampind[0] + m]
         for i in range(1, len(sampind)):
-            signat = data.y[sampind[i] - max_error: sampind[i] + m + max_error]
+            signat = data.y[max(0, sampind[i] - max_error): min(sampind[i] + m + max_error, len(data.y))]
             corr = np.correlate(signat, running_sum)
             shift = np.argmax(corr) - max_error
             shifts[i] = shift
