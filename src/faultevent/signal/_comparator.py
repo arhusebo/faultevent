@@ -103,12 +103,16 @@ def energy_detector_location_estimates(comparison: Comparison):
     an energy detector"""
     return [sigseg.x[0] for sigseg in comparison.signal_segments()]
 
-def matched_filter_location_estimates(comparison: Comparison):
-    """Given a comparison, returns the locations of events as detected
-    using a matched filter detector"""
+def matched_filter_location_estimates(comparison: Comparison)\
+        -> tuple[npt.ArrayLike, npt.ArrayLike]:
+    """Given a comparison, returns the locations and test statistic
+    magnitudes of events as detected using a matched filter detector"""
     loclist = []
+    maglist = []
     for sigseg in comparison.signal_segments():
         idx = np.argmax(sigseg.y)
         loc = sigseg.x[idx]
+        mag = sigseg.y[idx]
         loclist.append(loc)
-    return loclist
+        maglist.append(mag)
+    return np.asarray(loclist), np.asarray(maglist)
