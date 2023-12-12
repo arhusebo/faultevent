@@ -1,10 +1,11 @@
-from . import map_circle, event_spectrum, weighted_event_spectrum
+from . import map_circle, event_spectrum, weighted_event_spectrum, find_order
+from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass
-import copy
+from typing import Callable
 import numpy as np
 import numpy.typing as npt
-from scipy.stats import vonmises
+from scipy.stats import vonmises, uniform
 
 """Module for performing classification of events.
 
@@ -14,99 +15,157 @@ different frequencies.
 
 This module requires Scipy."""
 
-@dataclass
-class EMComponent:
-    mu: float
-    kappa: float
-    tau: float
-    ord: float
-    fixed_mu: bool = False
-    fixed_kappa: bool = False
-
+dx_default = np.ones_like
 kappa_approx = lambda r: (1.28-0.53*abs(r)**2)*np.tan(np.pi/2*abs(r))
 
-def event_probabilities(components: Iterable[EMComponent], x: npt.ArrayLike):
-    """Returns the membership probabilities of each component for every
-    event whose location is given by x"""
-    F = len(components)
-    M = np.shape(x)
-    uw = np.zeros((F, *M))
-    for f in range(F):
-        cmpf = components[f]
-        zf = map_circle(cmpf.ord, x)
-        uw[f] = cmpf.tau * vonmises.pdf(zf, cmpf.kappa, cmpf.mu)
-    w = uw/np.sum(uw, axis=0)
-    return w
 
-def em(components: Iterable[EMComponent], x: npt.ArrayLike, maxiter: int = 10):
-    """Performs expectation maximisation on event locations x, given a
-    set of partially fit components."""
-    F = len(components)
-    M = len(x)
+class EventModel(ABC):
+    
+    @abstractmethod
+    def pdf(self, x: npt.ArrayLike) -> npt.ArrayLike:
+        ...
 
-    new_components = copy.deepcopy(components)
+    @abstractmethod
+    def refit(self, x: npt.ArrayLike, w: npt.ArrayLike = 1.0):
+        ...
+
+
+@dataclass
+class FaultEvent(EventModel):
+    mu: float
+    kappa: float
+    f: float
+
+    def pdf(self, x: npt.ArrayLike) -> npt.ArrayLike:
+        zf = map_circle(self.f, x)
+        return vonmises.pdf(zf, self.kappa, self.mu)
+
+    def refit(self, x: npt.ArrayLike, w: npt.ArrayLike = 1.0):
+        p = weighted_event_spectrum(self.f, x, w)
+        M = np.sum(w)
+        r = np.conj(p) / M
+        mu = np.angle(r)
+        kappa = kappa_approx(r)
+        return type(self)(mu, kappa, self.f)
+
+
+@dataclass
+class AnomalousEvent(EventModel):
+    xmin: float
+    xmax: float
+    dx: Callable[[npt.ArrayLike], npt.ArrayLike] = dx_default
+
+    def pdf(self, x: npt.ArrayLike) -> npt.ArrayLike:
+        return uniform.pdf(x, self.xmin, self.xmax) / np.abs(self.dx(x))
+
+    def refit(self, x: npt.ArrayLike, w: npt.ArrayLike = 1.0):
+        return type(self)(self.xmin, self.xmax, self.dx)
+
+    def from_data(self, x: npt.ArrayLike, w: npt.ArrayLike = 1.0,):
+        return self
+
+
+class MixtureModel:
+
+    def __init__(self, components: Iterable[EventModel], weights: Iterable[float]):
+        self.components = components
+        self.weights = weights
+
+    def event_probabilities(self, x: npt.ArrayLike):
+        """For each each event whose location is given by x, returns
+        their membership probabilities of each mixture component.
+        
+        Output shape is (n_events, n_components)
+        """
+        shape_events = np.shape(x)
+        n_components = len(self.components)
+        uw = np.zeros((*shape_events, n_components))
+        for i, (component, weights) in enumerate(zip(self.components, self.weights)):
+            uw[...,i] = weights*component.pdf(x)
+        w = uw/np.sum(uw, axis=-1)[...,np.newaxis]
+        return w
+    
+    def classify_hard(self, x: npt.ArrayLike):
+        """Performs a hard classification of events whose locations are
+        given by x. The returned values correspond to the predicted
+        event labels."""
+        w = self.event_probabilities(x)
+        y = np.argmax(w, axis=-1)
+        return y
+
+    def entropy(self, x: npt.ArrayLike):
+        """Returns the entropy between mixture components at locations
+        x, in nats."""
+        w = self.event_probabilities(x)
+        return -np.sum(w*np.log(w), axis=-1)
+
+
+def em_step(model: MixtureModel, x: npt.ArrayLike):
+    """Perform an expectation maximization step using current mixture
+    and return an updated mixture"""
+    n_events = len(x)
+    new_components = []
+    new_tau = []
+    w = model.event_probabilities(x)
+    for i, component in enumerate(model.components):
+        new_tau.append(sum(w[:,i]) / n_events)
+        new_components.append(component.refit(x, w[:,i]))
+    
+    return MixtureModel(new_components, new_tau)
+
+
+def expectation_maximization(initial_model: MixtureModel,
+                             x: npt.ArrayLike,
+                             maxiter: int = 10,) -> MixtureModel:
+    """Performs iterations of the expectation maximization algorithm."""
+    # TODO: Implement convergence criterion
+    new_model = initial_model
     iter = 0
-    converged = False
-    while not converged:
-        # Expectation step
-        w = event_probabilities(new_components, x)
-        # Maximization step
-        for f in range(F):
-            cmpf = new_components[f]
-            Mf = sum(w[f])
-            tauf = Mf / M
-            pf = weighted_event_spectrum(cmpf.ord, x, w[f])
-            rf = np.conj(pf)/Mf
-            muf = np.angle(rf) if not cmpf.fixed_mu else cmpf.mu
-            kappaf = kappa_approx(rf) if not cmpf.fixed_kappa else cmpf.kappa
-
-            new_class = EMComponent(muf, kappaf, tauf,
-                                    cmpf.ord, cmpf.fixed_mu, cmpf.fixed_kappa)
-            new_components[f] = new_class
-
+    while iter < maxiter:
+        new_model = em_step(new_model, x)
         iter += 1
-        if iter>maxiter: converged = True
-    return w, new_components
+    
+    return new_model
+
 
 def initial_conditions(f: npt.ArrayLike,
                        x: npt.ArrayLike,
-                       x_inf: float,
-                       anomaly_rate: int):
+                       xmin: float,
+                       xmax: float,
+                       anomaly_rate: int,
+                       default_kappa: float = 10.0,
+                       dx: Callable[[npt.ArrayLike], npt.ArrayLike] = dx_default,
+                       approximate_f: bool = False):
     """Estimates a set of initial condition components for every
     frequency f and anomalies."""
     # TODO: Automatically find anomaly rate
-    n_events = sum((ff*x_inf for ff in f)) + anomaly_rate
+    xspan = xmax - xmin
+    n_events = sum((ff*xspan for ff in f)) + anomaly_rate
     components = []
-    for ff in f:
+    weights = []
+    components.append(AnomalousEvent(xmin, xmax, dx))
+    weights.append(anomaly_rate/n_events)
+    for f_ in f:
+        ff = f_
+        if approximate_f: ff, _ = find_order(x, f_-0.1, f_+0.1)
         pf = event_spectrum(ff, x)
-        k = ff*x_inf
+        k = ff*xspan
         r = np.conj(pf)/k
         mu = np.angle(r)
-        kappa = 10
-        tau = ff*x_inf/n_events
-        components.append(EMComponent(mu, kappa, tau, ff))
-    components.append(EMComponent(0, 1.e-5, anomaly_rate/n_events, 1/x_inf, True, True))
-    return components
+        kappa = default_kappa
+        weights.append(ff*xspan/n_events)
+        components.append(FaultEvent(mu, kappa, ff))
+    return MixtureModel(components, weights)
 
-def expectation_maximisation(f: npt.ArrayLike,
-                             x: npt.ArrayLike,
-                             x_inf: float = None,
-                             anomaly_rate: int = 0,
-                             maxiter: int = 10,):
-    """Perform expectation maximisation on events given their locations
-    and their associated frequencies. Returns the membership
-    probabilities of each component for every event.
-    
-    Arguments:
-    f -- the frequencies associated with the events
-    x -- the event locations
-    
-    Keyword arguments:
-    x_inf -- length of the measurement period
-    anomaly_rate -- number of anomalous events
-    maxiter -- maximum number of EM iterations
-    """
-    if x_inf is None: x_inf = x[-1]
-    cmp0 = initial_conditions(f, x, x_inf, anomaly_rate)
-    w, _ = em(cmp0, x, maxiter=maxiter)
-    return w
+
+def classify_hard(w: npt.ArrayLike):
+    """Performs a hard classification of events whose marginal mixture
+    component probabilities are given by w. The returned values
+    correspond to the predicted event labels."""
+    y = np.argmax(w, axis=-1)
+    return y
+
+
+def entropy(w: npt.ArrayLike):
+    """Returns the entropy of a probabilities w."""
+    return -np.sum(w*np.log(w), axis=-1)
