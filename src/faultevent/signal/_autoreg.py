@@ -1,6 +1,7 @@
 from typing import TypeVar
 
 import numpy as np
+import scipy.signal
 from . import Signal, SignalModel
 
 
@@ -33,12 +34,12 @@ def _predict(c, x):
     return ypred, err
 
 
-def process(c, s, x0=None):
+def process_old(c, s, x0=None):
     """Continue process x0 over inputs s"""
     p = len(c)
     if x0 is None: x = np.zeros((p,), dtype=float)
     else:
-        if len(x0)>=p:
+        if len(x0)<p:
             raise ValueError("x0 must be longer than c")
         x = np.flip(x0[-p:]) # last p entries of x0 reversed
 
@@ -47,6 +48,15 @@ def process(c, s, x0=None):
         yield xn
         x = np.roll(x, 1)
         x[0] = xn
+
+
+def process(c, s, x0=None):
+    if not x0 is None:
+        if len(x0)<len(c):
+            raise ValueError("x0 must be longer than or equally as long as c")
+    c_ = np.insert(-c, 0, 1.0)
+    y = scipy.signal.lfilter((1,), c_, s)
+    return y
 
 
 SelfARModel = TypeVar("SelfARModel", bound="ARModel")
@@ -78,9 +88,14 @@ class ARModel(SignalModel):
         x = signal.x[self.p:]
         return Signal(e, x, uniform_samples=True)
 
+    def process_old(self, data: Signal, x0=None):
+        """Response to input with initial state x0"""
+        y = np.fromiter(process_old(self.c, data.y, x0), dtype=float, count=len(data))
+        return Signal(y, data.x)
+    
     def process(self, data: Signal, x0=None):
         """Response to input with initial state x0"""
-        y = np.fromiter(process(self.c, data.y, x0), dtype=float, count=len(data))
+        y = process(self.c, data.y, x0)
         return Signal(y, data.x)
 
     @classmethod
