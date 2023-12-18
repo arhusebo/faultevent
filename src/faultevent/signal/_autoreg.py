@@ -86,17 +86,17 @@ class ARModel(SignalModel):
         """Prediction residuals of signal"""
         _, e = _predict(self.c, signal.y)
         x = signal.x[self.p:]
-        return Signal(e, x, uniform_samples=True)
+        return Signal(e, x, signal.uniform_samples)
 
     def process_old(self, data: Signal, x0=None):
         """Response to input with initial state x0"""
         y = np.fromiter(process_old(self.c, data.y, x0), dtype=float, count=len(data))
-        return Signal(y, data.x)
+        return Signal(y, data.x, data.uniform_samples)
     
     def process(self, data: Signal, x0=None):
         """Response to input with initial state x0"""
         y = process(self.c, data.y, x0)
-        return Signal(y, data.x)
+        return Signal(y, data.x, data.uniform_samples)
 
     @classmethod
     def from_signal(cls, signal: Signal, p) -> SelfARModel:
