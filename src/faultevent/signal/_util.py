@@ -3,6 +3,23 @@ import numpy.typing as npt
 
 from . import Signal
 
+
+def spectrum(signal: Signal):
+    """Returns a signal object representing the DFT spectrum of input
+    signal. If input signal is real, only the zero and real frequencies
+    are computed."""
+    if not signal.uniform_samples:
+        raise ValueError("Signal must have evenly spaced samples")
+    dx = signal.x[1]-signal.x[0]
+    if np.iscomplexobj(signal.y):
+        spec = np.fft.fft(signal.y)
+        freq = np.fft.fftfreq(len(signal.y), dx)
+    else:
+        spec = np.fft.rfft(signal.y)
+        freq = np.fft.rfftfreq(len(signal.y), dx)
+    return Signal(spec, freq, uniform_samples=True)
+
+
 def resample(x_to_eval: npt.ArrayLike,
              data: Signal,
              m: int = 100,

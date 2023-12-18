@@ -47,7 +47,7 @@ class Signal:
 
     def __getitem__(self, n) -> SelfSignal:
         """Returns a new signal instance"""
-        return type(self)(self.y[n], self.x[n])
+        return type(self)(self.y[n], self.x[n], self.uniform_samples)
     
     def idx_closest(self, x: npt.ArrayLike) -> np.ndarray:
         """Returns the signal index closest to the specified x value.
