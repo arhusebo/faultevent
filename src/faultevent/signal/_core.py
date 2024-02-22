@@ -58,6 +58,17 @@ class Signal:
             return idx
         else:
             return np.argmin(abs(self.x-x), axis=-1)
+    
+    @property
+    def dx(self) -> float:
+        if not self.uniform_samples:
+            raise ValueError("Signal samples are not uniformly spaced")
+        else:
+            return self.x[1] - self.x[0]
+        
+    @property
+    def fs(self) -> float:
+        return 1/self.dx
 
 
 class SignalModel(ABC):
