@@ -1,54 +1,35 @@
 from dataclasses import dataclass
 from collections.abc import Sequence
+import itertools
 from typing import Iterator, TypeVar, Optional
 import numpy as np
 import numpy.typing as npt
 
 from . import Signal
 
-def detect_gen(y: npt.ArrayLike,
-               y1: float, y0: float=None) -> Iterator[bool]:
-    """Generator yielding detections on given sequence
-    
-    Arguments:
-    y -- sequence to evaluate
-    y1 -- detection threshold
+def detect_func(thr, hys):
 
-    Keyword arguments:
-    y0 -- Optional hysteresis threshold. y0 < y1.
+    def _detect(d_prev: bool, x_new: bool) -> bool:
+        return (hys if d_prev else thr) < x_new
+
+    return _detect
+
+
+def detect(y, y1, y0):
+    """Performs detection with hysteresis.
     """
-    if y0:
-        if y0>=y1: raise ValueError("y0 must be lower than y1")
-    dn = False
-    for yn in y:
-        if not dn and yn >= y1: dn = True
-        elif dn and yn < (y0 if y0 else y1): dn = False
-        yield dn
+    if y0==None: y0 = y1
+    d_iter = itertools.accumulate(y, detect_func(y1, y0), initial=y[0]>y1)
+    return list(d_iter)[1:]
 
-def detect(y: npt.ArrayLike, y1, y0=None):
-    """ Simple detection with optional hysteresis """
-    gen = detect_gen(y, y1, y0)
-    det = np.fromiter(gen, dtype=bool, count=len(y))
-    return det
 
-def regions_from_generator(gen: Iterator[bool]):
-    """ Returns the pairs (start, stop) for regions detected by
-    specified detection generator"""
-    reg = []
-    dp = next(gen)
-    on = False
-    for n, dn in enumerate(gen):
-        diff = int(dn) - int(dp)
-        if on:
-            if diff == -1:
-                b = n+1
-                on = False
-                reg.append((a, b))
-        else:
-            if diff == 1:
-                a = n+1
-                on = True
-    return reg
+# Alternative detection using numpy ufunc:
+#def detect(y, y1, y0):
+#        dfun = detect_func(y1, y0)
+#        ufunc = np.frompyfunc(dfun, 2, 1)
+#        d = ufunc.accumulate(y, dtype=np.dtype(bool))
+#        d[0] = y[0]<=y1
+#        return d
 
 
 def regions_from_sequence(seq: Sequence[bool]):
