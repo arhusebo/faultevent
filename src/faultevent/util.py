@@ -61,45 +61,43 @@ def best_threshold(data: Signal, orda, ordb,
 
 def estimate_signature(data: Signal,
                        m: int,
-                       weights: npt.ArrayLike | None = None,
-                       idx: npt.ArrayLike | None = None,
-                       x: npt.ArrayLike | None = None,
+                       x: npt.ArrayLike = None,
+                       idx: npt.ArrayLike = None,
+                       weights: npt.ArrayLike = None,
                        max_error: int = 0,
                        n0: int = 0) -> npt.ArrayLike:
 
     """Estimates the fault signature given a set of
     (possibly inaccurate) event locations x and their weights."""
 
-    # take index into account for weights as well
-    data = copy.deepcopy(data)
     if idx is None:
         if x is None:
             raise ValueError("Either indices idx or locations x must be specified.")
-        idx = np.array(data.idx_closest(x)) + n0
-    idx = idx[np.where((idx >= 0) & (idx + m < len(data)))]
-    #idx = idx[np.where(idx >= 0)]
-    #idx = idx[np.where(idx + m < len(data))]
-
-    if weights is None:
-        weights = np.ones_like(idx, dtype=float)
+        else:
+            sampind = np.array(data.idx_closest(x)) + n0
     else:
-        weights = weights[idx]
-    slices = np.array([np.arange(n, n+m) for n in idx])
+        sampind = np.array(idx) + n0
+
+    # take index into account for weights as well
+    data = copy.deepcopy(data)
+    idx_keep = np.where((sampind >= 0) & (sampind + m < len(data)))
+    sampind = sampind[idx_keep]
+    weights = weights[idx_keep]
+    slices = np.array([np.arange(n, n+m) for n in sampind])
 
     totweight = sum(weights)
 
     if max_error == 0:
         h = np.sum(np.asarray(data.y)[slices].T*weights, axis=1)/totweight
-        #h = np.sum(np.transpose([data.y[i: i + m] for i in idx])*weights, axis=1)/totweight
     else:
-        shifts = np.zeros_like(idx)
-        running_sum = data.y[idx[0]: idx[0] + m]
-        for i in range(1, len(idx)):
-            signat = data.y[max(0, idx[i] - max_error): min(idx[i] + m + max_error, len(data.y))]
+        shifts = np.zeros_like(sampind)
+        running_sum = data.y[sampind[0]: sampind[0] + m]
+        for i in range(1, len(sampind)):
+            signat = data.y[max(0, sampind[i] - max_error): min(sampind[i] + m + max_error, len(data.y))]
             corr = np.correlate(signat, running_sum)
             shift = np.argmax(corr) - max_error
             shifts[i] = shift
-            signat_new = data.y[idx[i]+shift: idx[i]+shift+m]
+            signat_new = data.y[sampind[i]+shift: sampind[i]+shift+m]
             running_sum += signat_new * weights[i]
 
         h = running_sum/totweight
