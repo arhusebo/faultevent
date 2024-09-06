@@ -1,4 +1,5 @@
 import copy
+from typing import Literal
 import numpy as np
 import numpy.typing as npt
 
@@ -41,22 +42,33 @@ def order_track_time_series(time_series: Signal,
     resampled = time_to_shaft(to_eval, time_series, shaft_position)
     return Signal(resampled, to_eval, uniform_samples=True)
 
-def best_threshold(data: Signal, orda, ordb,
-                   thrs: npt.ArrayLike = None,
-                   n=10, hys=.2, dettype="mf") -> float:
-    """Evaluates a metric over multiple thresholds and returns the
-    best threshold"""
-    if thrs==None: thrs = np.linspace(0, 5*np.std(data.y), n)
-    scores = np.zeros_like(thrs, dtype=float)
-    for i, thr in enumerate(thrs):
-        cmp = Comparison.from_comparator(data, thr, hys*thr)
-        if dettype=="mf": spos, _ = np.asarray(matched_filter_location_estimates(cmp))
-        elif dettype=="ed": spos = np.asarray(energy_detector_location_estimates(cmp))
-        else: raise ValueError
-        _, mag = find_order(spos, orda, ordb)
-        scores[i] = mag/np.sqrt(len(spos)) if len(spos) > 0 else 0.0
 
-    return thrs[np.argmax(scores)]
+def best_threshold(data: Signal,
+                   search_intervals: list[tuple[float, float]],
+                   thresholds: npt.ArrayLike | None = None,
+                   n=10,
+                   hysteresis=.2,
+                   dettype: Literal["mf", "ed"] = "mf",
+                   order_search_density = 1000) -> tuple[float, float]:
+    """Evaluates a metric over multiple thresholds and returns the
+    best threshold and the score metric"""
+    if thresholds is None: thresholds = np.linspace(0, 5*np.std(data.y), n)
+    scores = np.zeros_like(thresholds, dtype=float)
+    for i, thr in enumerate(thresholds):
+        cmp = Comparison.from_comparator(data, thr, hysteresis*thr)
+        match dettype:
+            case "mf": spos, _ = np.asarray(matched_filter_location_estimates(cmp))
+            case "ed": spos = np.asarray(energy_detector_location_estimates(cmp))
+            case _: raise ValueError
+        magsum = 0.0
+        for interval in search_intervals:
+            _, mag = find_order(spos, *interval, order_search_density)
+            magsum += mag
+        scores[i] = magsum/np.sqrt(len(spos)) if len(spos) > 0 else 0.0
+    
+    i_best_score = np.argmax(scores)
+
+    return thresholds[i_best_score], scores[i_best_score]
 
 
 def estimate_signature(data: Signal,
