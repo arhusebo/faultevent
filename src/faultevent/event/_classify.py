@@ -108,7 +108,10 @@ def em_step(model: MixtureModel, x: npt.ArrayLike):
     new_tau = []
     w = model.event_probabilities(x)
     for i, component in enumerate(model.components):
-        new_tau.append(sum(w[:,i]) / n_events)
+        if type(component) == AnomalousEvent:
+            new_tau.append(model.weights[i])
+        else:
+            new_tau.append(sum(w[:,i]) / n_events)
         new_components.append(component.refit(x, w[:,i]))
     
     return MixtureModel(new_components, new_tau)
