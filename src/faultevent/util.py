@@ -73,9 +73,9 @@ def best_threshold(data: Signal,
 
 def estimate_signature(data: Signal,
                        m: int,
-                       x: npt.ArrayLike = None,
-                       idx: npt.ArrayLike = None,
-                       weights: npt.ArrayLike = None,
+                       x: npt.ArrayLike | None = None,
+                       idx: npt.ArrayLike | None = None,
+                       weights: npt.ArrayLike | None = None,
                        max_error: int = 0,
                        n0: int = 0) -> npt.ArrayLike:
 
@@ -92,9 +92,12 @@ def estimate_signature(data: Signal,
 
     # take index into account for weights as well
     data = copy.deepcopy(data)
-    idx_keep = np.where((sampind >= 0) & (sampind + m < len(data)))
+    idx_keep, = np.where((sampind >= 0) & (sampind + m < len(data)))
     sampind = sampind[idx_keep]
-    weights = weights[idx_keep]
+    if weights:
+        weights = weights[idx_keep]
+    else:
+        weights = np.ones(idx_keep.size, dtype=float)
     slices = np.array([np.arange(n, n+m) for n in sampind])
 
     totweight = sum(weights)
