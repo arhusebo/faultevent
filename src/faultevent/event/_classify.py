@@ -32,13 +32,15 @@ class EventModel(ABC):
 
 @dataclass
 class FaultEvent(EventModel):
+    xmin: float
+    xmax: float
     mu: float
     kappa: float
     f: float
 
     def pdf(self, x: npt.ArrayLike) -> npt.ArrayLike:
         zf = map_circle(self.f, x)
-        return vonmises.pdf(zf, self.kappa, self.mu)
+        return vonmises.pdf(zf, self.kappa, self.mu)/(self.xmax-self.xmin)
 
     def refit(self, x: npt.ArrayLike, w: npt.ArrayLike = 1.0):
         p = weighted_event_spectrum(self.f, x, w)
@@ -46,7 +48,7 @@ class FaultEvent(EventModel):
         r = np.conj(p) / M
         mu = np.angle(r)
         kappa = kappa_approx(r)
-        return type(self)(mu, kappa, self.f)
+        return type(self)(self.xmin, self.xmax, mu, kappa, self.f)
 
 
 @dataclass
@@ -157,7 +159,7 @@ def initial_conditions(f: npt.ArrayLike,
         mu = np.angle(r)
         kappa = default_kappa
         weights.append(ff*xspan/n_events)
-        components.append(FaultEvent(mu, kappa, ff))
+        components.append(FaultEvent(xmin, xmax, mu, kappa, ff))
     return MixtureModel(components, weights)
 
 
