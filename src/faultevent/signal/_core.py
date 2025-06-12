@@ -50,11 +50,11 @@ class Signal:
         return type(self)(self.y[n], self.x[n], self.uniform_samples)
     
 
-    def __add__(self, other: SelfSignal):
+    def _overload_check(self, func, other: SelfSignal):
         if not type(self) == type(other):
             raise ValueError("Only another signal may be added to a signal.")
         if len(self) == len(other):
-            out = type(self)(self.y+other.y, self.x, uniform_samples=True)
+            out = func(other)
             if self.uniform_samples and other.uniform_samples:
                 return out
             elif np.array_equal(self.x, other.x):
@@ -63,6 +63,13 @@ class Signal:
                 return out
         raise ValueError("Both signals must be of same length and sample periods.")
 
+    def __add__(self, other: SelfSignal):
+        func = lambda other: type(self)(self.y+other.y, self.x, uniform_samples=self.uniform_samples)
+        return self._overload_check(func, other)
+
+    def __sub__(self, other: SelfSignal):
+        func = lambda other: type(self)(self.y-other.y, self.x, uniform_samples=self.uniform_samples)
+        return self._overload_check(func, other)
     
     def idx_closest(self, x: npt.ArrayLike) -> np.ndarray:
         """Returns the signal index closest to the specified x value.
