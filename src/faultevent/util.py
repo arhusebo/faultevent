@@ -110,7 +110,8 @@ def estimate_signature(data: Signal,
             shift = np.argmax(corr) - max_error
             shifts[i] = shift
             signat_new = data.y[sampind[i]+shift: sampind[i]+shift+m]
-            running_sum += signat_new * weights[i]
+            if len(signat_new) == m:
+                running_sum += signat_new * weights[i]
 
         h = running_sum/totweight
     return h
