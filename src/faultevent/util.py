@@ -47,15 +47,17 @@ def best_threshold(data: Signal,
                    search_intervals: list[tuple[float, float]],
                    thresholds: npt.ArrayLike | None = None,
                    n=10,
-                   hysteresis=.2,
+                   hysteresis: int | None = None,
                    dettype: Literal["mf", "ed"] = "mf",
                    order_search_density = 1000) -> tuple[float, float]:
     """Evaluates a metric over multiple thresholds and returns the
     best threshold and the score metric"""
     if thresholds is None: thresholds = np.linspace(0, 5*np.std(data.y), n)
     scores = np.zeros_like(thresholds, dtype=float)
+
     for i, thr in enumerate(thresholds):
-        cmp = Comparison.from_comparator(data, thr, hysteresis*thr)
+        hys = None if hysteresis is None else hysteresis*thr
+        cmp = Comparison.from_comparator(data, thr, hys)
         match dettype:
             case "mf": spos, _ = np.asarray(matched_filter_location_estimates(cmp))
             case "ed": spos = np.asarray(energy_detector_location_estimates(cmp))
@@ -76,42 +78,55 @@ def estimate_signature(data: Signal,
                        x: npt.ArrayLike = None,
                        idx: npt.ArrayLike = None,
                        weights: npt.ArrayLike = None,
-                       max_error: int = 0,
-                       n0: int = 0) -> npt.ArrayLike:
+                       max_error: int = 0) -> npt.ArrayLike:
 
     """Estimates the fault signature given a set of
     (possibly inaccurate) event locations x and their weights."""
+    data = copy.deepcopy(data)
 
     if idx is None:
         if x is None:
             raise ValueError("Either indices idx or locations x must be specified.")
         else:
-            sampind = np.array(data.idx_closest(x)) + n0
+            sampind = np.array(data.idx_closest(x))
     else:
-        sampind = np.array(idx) + n0
+        sampind = np.array(idx)
 
-    # take index into account for weights as well
-    data = copy.deepcopy(data)
+    # remove the signature windows that fall partially outside the signal
     idx_keep = np.where((sampind >= 0) & (sampind + m < len(data)))
     sampind = sampind[idx_keep]
     weights = weights[idx_keep]
-    slices = np.array([np.arange(n, n+m) for n in sampind])
 
     totweight = sum(weights)
 
     if max_error == 0:
-        h = np.sum(np.asarray(data.y)[slices].T*weights, axis=1)/totweight
-    else:
-        shifts = np.zeros_like(sampind)
+        #slices = (data.y[n:n+m] for n in sampind)
+        #h = np.sum(x*w for x, w in zip(slices, weights))/totweight
+        
         running_sum = data.y[sampind[0]: sampind[0] + m]
         for i in range(1, len(sampind)):
-            signat = data.y[max(0, sampind[i] - max_error): min(sampind[i] + m + max_error, len(data.y))]
-            corr = np.correlate(signat, running_sum)
+            idx = sampind[i]
+            idx0 = max(0, idx)
+            idx1 = min(idx+m, len(data.y))
+            sigwin_new = data.y[idx0: idx1]
+            if len(sigwin_new) == m:
+                running_sum += sigwin_new * weights[i]
+
+        h = running_sum/totweight
+
+    else:
+        running_sum = data.y[sampind[0]: sampind[0] + m]
+
+        for i in range(1, len(sampind)):
+            idx = sampind[i]
+            idx0 = max(0, idx-max_error)
+            idx1 = min(idx+m+max_error, len(data.y))
+            sigwin = data.y[idx0: idx1]
+            corr = np.correlate(sigwin, running_sum)
             shift = np.argmax(corr) - max_error
-            shifts[i] = shift
-            signat_new = data.y[sampind[i]+shift: sampind[i]+shift+m]
-            if len(signat_new) == m:
-                running_sum += signat_new * weights[i]
+            sigwin_new = data.y[idx+shift: idx+shift+m]
+            if len(sigwin_new) == m:
+                running_sum += sigwin_new * weights[i]
 
         h = running_sum/totweight
     return h

@@ -37,7 +37,8 @@ class EnergyDetector(Detector):
 
     def statistic(self, data: Signal) -> Signal:
         s = np.correlate(data.y**2, np.ones((self.m,)), mode="valid")
-        return Signal(s, data.x[self.m-1:], data.uniform_samples)
+        #return Signal(s, data.x[self.m-1:], data.uniform_samples)
+        return Signal(s, data.x[:-self.m+1], data.uniform_samples)
 
 
 class MatchedFilterDetector(Detector):
@@ -73,3 +74,27 @@ class MatchedFilterEnvelopeDetector(Detector):
         hsdft[-len(dft):] = 2*dft
         anl = np.fft.ifft(hsdft)
         return Signal(abs(anl), data.x[:len(s)], data.uniform_samples)
+
+
+class MatchedFilterMaximumDetector(Detector):
+    """Implements a matched filter envelope detector. Useful when the
+    signature contains multiple periods of its components."""
+    def __init__(self, h, l: int | None = None):
+        self.h = h
+        self.l = len(h) if not l else l
+    
+    def moments(self, var):
+        """NOT IMPLEMENTED"""
+        # TODO: implement
+        raise NotImplementedError
+
+    def statistic(self, data: Signal) -> Signal:
+        s = np.correlate(data.y, self.h, mode="valid")
+        windows = np.lib.stride_tricks.sliding_window_view(s, self.l)
+        moving_max = np.max(windows, axis=-1)
+        #shift = len(data)-len(moving_max)
+        idx1 = len(data)-len(self.h)+1
+        idx0 = self.l-1
+        return Signal(moving_max, data.x[idx0:idx1], data.uniform_samples)
+        #return Signal(moving_max, data.x[shift//2:-shift//2], data.uniform_samples)
+        #return Signal(moving_max, data.x[shift:], data.uniform_samples)
