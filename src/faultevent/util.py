@@ -74,58 +74,76 @@ def best_threshold(data: Signal,
 
 
 def estimate_signature(data: Signal,
-                       m: int,
-                       x: npt.ArrayLike = None,
-                       idx: npt.ArrayLike = None,
-                       weights: npt.ArrayLike = None,
+                       length: int,
+                       x: npt.ArrayLike | None = None,
+                       indices: npt.ArrayLike | None = None,
+                       weights: npt.ArrayLike | None = None,
                        max_error: int = 0) -> npt.ArrayLike:
 
     """Estimates the fault signature given a set of
     (possibly inaccurate) event locations x and their weights."""
+
     data = copy.deepcopy(data)
 
-    if idx is None:
-        if x is None:
-            raise ValueError("Either indices idx or locations x must be specified.")
-        else:
-            sampind = np.array(data.idx_closest(x))
+    has_weights = weights is not None
+    has_x = x is not None
+    has_indices = indices is not None
+
+    if (has_indices and has_x) or not(has_indices or has_x):
+        raise ValueError("Either indices idx or locations x must be specified.")
+
+    if has_indices:
+        sampind = np.array(indices)
+    elif has_x:
+        sampind = np.array(data.idx_closest(x))
+
+    if (has_indices and has_weights) and len(indices)!=len(weights):
+        raise ValueError("indices and weights must be of same length")
     else:
-        sampind = np.array(idx)
+        weights = np.ones_like(sampind, dtype=float)
 
     # remove the signature windows that fall partially outside the signal
-    idx_keep = np.where((sampind >= 0) & (sampind + m < len(data)))
+    idx_keep = np.where((sampind >= 0) & (sampind + length < len(data)))
     sampind = sampind[idx_keep]
-    weights = weights[idx_keep]
+
+    if (has_x and has_weights) and len(x)!=len(weights):
+        weights = weights[idx_keep]
+        raise ValueError("x and weights must be of same length")
+    else:
+        weights = np.ones_like(sampind, dtype=float)
+        idx_sorted = np.argsort(weights) # ascending weights
+        sampind[::-1] = sampind[idx_sorted]
+        weights[::-1] = weights[idx_sorted]
 
     totweight = sum(weights)
 
     if max_error == 0:
-        #slices = (data.y[n:n+m] for n in sampind)
+        #slices = (data.y[n:n+length] for n in sampind)
         #h = np.sum(x*w for x, w in zip(slices, weights))/totweight
         
-        running_sum = data.y[sampind[0]: sampind[0] + m]
+        running_sum = data.y[sampind[0]: sampind[0] + length]
         for i in range(1, len(sampind)):
             idx = sampind[i]
             idx0 = max(0, idx)
-            idx1 = min(idx+m, len(data.y))
+            idx1 = min(idx+length, len(data.y))
             sigwin_new = data.y[idx0: idx1]
-            if len(sigwin_new) == m:
+            if len(sigwin_new) == length:
                 running_sum += sigwin_new * weights[i]
 
         h = running_sum/totweight
 
     else:
-        running_sum = data.y[sampind[0]: sampind[0] + m]
+        running_sum = data.y[sampind[0]: sampind[0] + length]
 
         for i in range(1, len(sampind)):
             idx = sampind[i]
             idx0 = max(0, idx-max_error)
-            idx1 = min(idx+m+max_error, len(data.y))
+            idx1 = min(idx+length+max_error, len(data.y))
             sigwin = data.y[idx0: idx1]
             corr = np.correlate(sigwin, running_sum)
             shift = np.argmax(corr) - max_error
-            sigwin_new = data.y[idx+shift: idx+shift+m]
-            if len(sigwin_new) == m:
+            sigwin_new = data.y[idx+shift: idx+shift+length]
+            if len(sigwin_new) == length:
                 running_sum += sigwin_new * weights[i]
 
         h = running_sum/totweight
