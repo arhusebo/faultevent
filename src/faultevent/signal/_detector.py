@@ -56,6 +56,27 @@ class MatchedFilterDetector(Detector):
         return Signal(s, data.x[:-len(self.h)+1], data.uniform_samples)
 
 
+class AnalyticMatchedFilterDetector(Detector):
+    """Implements a matched filter detector that returns the analytic
+    signal. Useful when the signature contains multiple periods of its
+    components."""
+    def __init__(self, h):
+        self.h = h
+    
+    def moments(self, var):
+        """NOT IMPLEMENTED"""
+        # TODO: implement
+        raise NotImplementedError
+
+    def statistic(self, data: sig.Signal) -> sig.Signal:
+        s = np.correlate(data.y, self.h, mode="valid")
+        dft = np.fft.rfft(s)
+        hsdft = np.zeros_like(s, dtype=complex)
+        hsdft[-len(dft):] = 2*dft
+        anl = np.fft.ifft(hsdft)
+        return sig.Signal(anl, data.x[:len(s)], data.uniform_samples)
+
+
 class MatchedFilterEnvelopeDetector(Detector):
     """Implements a matched filter envelope detector. Useful when the
     signature contains multiple periods of its components."""
