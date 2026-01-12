@@ -68,13 +68,13 @@ class AnalyticMatchedFilterDetector(Detector):
         # TODO: implement
         raise NotImplementedError
 
-    def statistic(self, data: sig.Signal) -> sig.Signal:
+    def statistic(self, data: Signal) -> Signal:
         s = np.correlate(data.y, self.h, mode="valid")
         dft = np.fft.rfft(s)
         hsdft = np.zeros_like(s, dtype=complex)
         hsdft[-len(dft):] = 2*dft
         anl = np.fft.ifft(hsdft)
-        return sig.Signal(anl, data.x[:len(s)], data.uniform_samples)
+        return Signal(anl, data.x[:len(s)], data.uniform_samples)
 
 
 class MatchedFilterEnvelopeDetector(Detector):
