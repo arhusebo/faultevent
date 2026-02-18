@@ -148,3 +148,64 @@ def estimate_signature(data: Signal,
 
         h = running_sum/totweight
     return h
+
+
+def scm(signal: npt.ArrayLike, length: int, maxerror: int,
+        eoi: npt.ArrayLike, weights: npt.ArrayLike,):
+    """Sequential cross-correlation maximization.
+
+    From a set of innaccurate signature occurrence indices (EOIs),
+    estimate the signature.
+    """
+
+    psignal = np.pad(signal, maxerror+length)
+    eoi_remain = eoi+maxerror+length # shift indices to account for padding
+    
+    # Initial signature estimate
+    # Find the two "best" signature occurences, i.e. the two that maximizes
+    # their cross-correlation maximum
+    result_best = {"score": 0.0}
+    for i, eoi_ in enumerate(eoi_remain):
+        template = psignal[eoi_:eoi_+length]
+        result = best_match(template, psignal, maxerror, np.delete(eoi_remain, i))
+        if result["score"]>result_best["score"]:
+            result_best = result
+            i_best = i
+            sigest = weights[i]*template+weights[result["idx"]]*result["signature"]
+    
+    # remove indices of the two signature occurences that went into the initial estimate
+    eoi_remain = np.delete(eoi_remain, [i_best, result_best["idx"]])
+
+    # Subsequent signature estimates
+    # Find the next "best" signature occurence, i.e. the one that maximizes
+    # its cross-correlation maximum with the current estimate.
+    # Updates the signature estimate.
+    # Do this until no signature occurences remain
+    while len(eoi_remain)>0:
+        result = best_match(sigest, psignal, maxerror, eoi_remain)
+        sigest += weights[result["idx"]]*result["signature"]
+        eoi_remain = np.delete(eoi_remain, result["idx"])
+
+    return sigest/sum(weights)
+
+
+def best_match(template, signal, maxerror, eoi):
+    """Return, from an array of EOIs, the signature occurrence that best
+    matches the given template"""
+    corr_best = 0.0
+    for i, eoi_ in enumerate(eoi):
+        padded = signal[eoi_-maxerror:eoi_+len(template)+maxerror]
+        corr = np.correlate(a=padded,
+                            v=template,
+                            mode="valid")
+        eoi_shift_max = np.argmax(corr)
+        corr_max = corr[eoi_shift_max]
+        if corr_max > corr_best:
+            corr_best = corr_max
+            i_best = i
+            eoi_best = eoi_-maxerror+eoi_shift_max
+        
+    return {
+        "idx": i_best,
+        "signature": signal[eoi_best:eoi_best+len(template)],
+        "score": corr_best,}
