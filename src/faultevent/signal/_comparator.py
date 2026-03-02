@@ -7,19 +7,12 @@ import numpy.typing as npt
 
 from . import Signal
 
-def detect_func(thr, hys):
-
-    def _detect(d_prev: bool, x_new: bool) -> bool:
-        return (hys if d_prev else thr) < x_new
-
-    return _detect
-
 
 def detect(y, y1, y0):
     """Performs detection with hysteresis.
     """
     if y0==None: y0 = y1
-    d_iter = itertools.accumulate(y, detect_func(y1, y0), initial=y[0]>y1)
+    d_iter = itertools.accumulate(y, lambda x1, x2: (y0 if x1 else y1) < x2, initial=y[0]>y1)
     return list(d_iter)[1:]
 
 
@@ -59,7 +52,7 @@ class Comparison:
     """
     data: Signal
     state: Signal
-    regions: Sequence[tuple[float, float]]
+    regions: Sequence[tuple[int, int]]
     threshold: float
     hysteresis: Optional[float]
     empty: bool
@@ -80,20 +73,15 @@ class Comparison:
 
 
 def energy_detector_location_estimates(comparison: Comparison):
-    """Given a comparison, returns locations of events as detected using
+    """Given a comparison, returns indices of events as detected using
     an energy detector"""
-    return [sigseg.x[0] for sigseg in comparison.signal_segments()]
+    return np.fromiter((idx for idx, _ in comparison.regions),
+                       dtype=int)
 
-def matched_filter_location_estimates(comparison: Comparison)\
-        -> tuple[npt.ArrayLike, npt.ArrayLike]:
-    """Given a comparison, returns the locations and test statistic
-    magnitudes of events as detected using a matched filter detector"""
-    loclist = []
-    maglist = []
-    for sigseg in comparison.signal_segments():
-        idx = np.argmax(sigseg.y)
-        loc = sigseg.x[idx]
-        mag = sigseg.y[idx]
-        loclist.append(loc)
-        maglist.append(mag)
-    return np.asarray(loclist), np.asarray(maglist)
+
+def matched_filter_location_estimates(comparison: Comparison):
+    """Given a comparison, returns the indices of events as detected
+    using a matched filter detector"""
+    return np.fromiter((idx0 + np.argmax(comparison.data.y[idx0:idx1])
+                        for idx0, idx1 in comparison.regions),
+                       dtype=int)

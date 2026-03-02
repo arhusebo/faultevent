@@ -53,32 +53,31 @@ def best_threshold(data: Signal,
     """Evaluates a metric over multiple thresholds and returns the
     best threshold and the score metric"""
     if thresholds is None: thresholds = np.linspace(0, 5*np.std(data.y), n)
-    scores = np.zeros_like(thresholds, dtype=float)
 
-    for i, thr in enumerate(thresholds):
+    def score(thr):
         hys = None if hysteresis is None else hysteresis*thr
         cmp = Comparison.from_comparator(data, thr, hys)
         match dettype:
-            case "mf": spos, _ = np.asarray(matched_filter_location_estimates(cmp))
-            case "ed": spos = np.asarray(energy_detector_location_estimates(cmp))
+            case "mf": eoi = matched_filter_location_estimates(cmp)
+            case "ed": eoi = energy_detector_location_estimates(cmp)
             case _: raise ValueError
-        magsum = 0.0
-        for interval in search_intervals:
-            _, mag = find_order(spos, *interval, order_search_density)
-            magsum += mag
-        scores[i] = magsum/np.sqrt(len(spos)) if len(spos) > 0 else 0.0
-    
-    i_best_score = np.argmax(scores)
+        if len(eoi)==0:
+            return 0.0
+        return sum((find_order(data.x[eoi], *interval, order_search_density)[1]
+                      for interval in search_intervals))/np.sqrt(len(eoi))
 
-    return thresholds[i_best_score], scores[i_best_score]
+    scores = [score(thr) for thr in thresholds]
+    idx = np.argmax(scores)
+
+    return thresholds[idx], scores[idx]
 
 
-def estimate_signature(data: Signal,
-                       length: int,
-                       x: npt.ArrayLike | None = None,
-                       indices: npt.ArrayLike | None = None,
-                       weights: npt.ArrayLike | None = None,
-                       max_error: int = 0) -> npt.ArrayLike:
+def estimate_signature_old(data: Signal,
+                           length: int,
+                           x: npt.ArrayLike | None = None,
+                           indices: npt.ArrayLike | None = None,
+                           weights: npt.ArrayLike | None = None,
+                           max_error: int = 0) -> npt.ArrayLike:
 
     """Estimates the fault signature given a set of
     (possibly inaccurate) event locations x and their weights."""
@@ -148,6 +147,16 @@ def estimate_signature(data: Signal,
 
         h = running_sum/totweight
     return h
+
+
+def estimate_signature(signal: Signal,
+                       length: int,
+                       indices: npt.ArrayLike,
+                       weights: npt.ArrayLike,) -> npt.ArrayLike:
+    if len(indices)!=len(weights):
+        raise ValueError("indices and weights must be of the same length")
+    return np.sum((w*signal.y[i:min(len(signal), i+length)]
+                   for w, i in zip(weights, indices)))/sum(weights)
 
 
 def scm(signal: npt.ArrayLike, length: int, maxerror: int,
