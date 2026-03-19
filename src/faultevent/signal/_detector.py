@@ -98,7 +98,7 @@ class MatchedFilterEnvelopeDetector(Detector):
 
 
 class MatchedFilterMaximumDetector(Detector):
-    """Implements a matched filter envelope detector. Useful when the
+    """Implements a matched filter sliding-maximum detector. Useful when the
     signature contains multiple periods of its components."""
     def __init__(self, h, l: int | None = None):
         self.h = h

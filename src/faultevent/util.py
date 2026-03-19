@@ -47,7 +47,7 @@ def best_threshold(data: Signal,
                    search_intervals: list[tuple[float, float]],
                    thresholds: npt.ArrayLike | None = None,
                    n=10,
-                   hysteresis: int | None = None,
+                   hysteresis: float | None = None,
                    dettype: Literal["mf", "ed"] = "mf",
                    order_search_density = 1000) -> tuple[float, float]:
     """Evaluates a metric over multiple thresholds and returns the
@@ -152,11 +152,17 @@ def estimate_signature_old(data: Signal,
 def estimate_signature(signal: Signal,
                        length: int,
                        indices: npt.ArrayLike,
-                       weights: npt.ArrayLike,) -> npt.ArrayLike:
+                       weights: npt.ArrayLike = None,) -> npt.ArrayLike:
+    if weights is None:
+        weights = np.ones_like(indices, dtype=float)
     if len(indices)!=len(weights):
         raise ValueError("indices and weights must be of the same length")
-    return np.sum((w*signal.y[i:min(len(signal), i+length)]
-                   for w, i in zip(weights, indices)))/sum(weights)
+    sum_ = np.zeros((length,), dtype=float)
+    for w, i in zip(weights, indices):
+        if i<0 or i+length>len(signal):
+            continue
+        sum_ += w*signal.y[i:i+length]
+    return sum_/sum(weights)
 
 
 def scm(signal: npt.ArrayLike, length: int, maxerror: int,
