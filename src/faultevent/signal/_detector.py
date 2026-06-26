@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 import numpy as np
+import scipy.signal
 
 from . import Signal
 
@@ -76,6 +77,12 @@ class AnalyticMatchedFilterDetector(Detector):
         anl = np.fft.ifft(hsdft)
         return Signal(anl, data.x[:len(s)], data.uniform_samples)
 
+    def statistic(self, data: Signal) -> Signal:
+        s = np.correlate(data.y, self.h, mode="valid")
+        anl = scipy.signal.hilbert(s)
+        return Signal(anl, data.x[:len(s)], data.uniform_samples)
+
+
 
 class MatchedFilterEnvelopeDetector(Detector):
     """Implements a matched filter envelope detector. Useful when the
@@ -116,6 +123,11 @@ class MatchedFilterMaximumDetector(Detector):
         #shift = len(data)-len(moving_max)
         idx1 = len(data)-len(self.h)+1
         idx0 = self.l-1
+        #idx0 = len(self.h)+self.l-2
+        #idx1 = len(data)
+        # The following works
+        #idx1 = len(data)-len(self.h)-self.l+2
+        #idx0 = 0
         return Signal(moving_max, data.x[idx0:idx1], data.uniform_samples)
         #return Signal(moving_max, data.x[shift//2:-shift//2], data.uniform_samples)
         #return Signal(moving_max, data.x[shift:], data.uniform_samples)

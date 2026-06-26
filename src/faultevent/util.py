@@ -56,10 +56,22 @@ def best_threshold(data: Signal,
 
     def score(thr):
         hys = None if hysteresis is None else hysteresis*thr
-        cmp = Comparison.from_comparator(data, thr, hys)
         match dettype:
-            case "mf": eoi = matched_filter_location_estimates(cmp)
-            case "ed": eoi = energy_detector_location_estimates(cmp)
+            case "mf":
+                data_env = Signal(abs(data.y), data.x, uniform_samples=data.uniform_samples)
+                data_real = Signal(data.y.real, data.x, uniform_samples=data.uniform_samples)
+                cmp = Comparison.from_comparator(data_env, thr, hys)
+                cmp_ = Comparison(
+                        data=data_real,
+                        state=cmp.state,
+                        regions=cmp.regions,
+                        threshold=cmp.threshold,
+                        hysteresis=cmp.hysteresis,
+                        empty=cmp.empty,)
+                eoi = matched_filter_location_estimates(cmp_)
+            case "ed":
+                cmp = Comparison.from_comparator(data, thr, hys)
+                eoi = energy_detector_location_estimates(cmp)
             case _: raise ValueError
         if len(eoi)==0:
             return 0.0
@@ -207,7 +219,7 @@ def scm(signal: npt.ArrayLike, length: int, maxerror: int,
 def best_match(template, signal, maxerror, eoi):
     """Return, from an array of EOIs, the signature occurrence that best
     matches the given template"""
-    corr_best = 0.0
+    corr_best = -np.inf
     for i, eoi_ in enumerate(eoi):
         padded = signal[eoi_-maxerror:eoi_+len(template)+maxerror]
         corr = np.correlate(a=padded,
@@ -219,7 +231,6 @@ def best_match(template, signal, maxerror, eoi):
             corr_best = corr_max
             i_best = i
             eoi_best = eoi_-maxerror+eoi_shift_max
-        
     return {
         "idx": i_best,
         "signature": signal[eoi_best:eoi_best+len(template)],
