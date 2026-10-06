@@ -4,16 +4,22 @@ import numpy.typing as npt
 from . import event_spectrum, cumulative_event_spectrum
 
 def find_order(x: npt.ArrayLike, ordmin: float, ordmax: float,
-               density: float = 10000.0) -> tuple[float, float]:
+               density: float = 10000.0,
+               max_elements: int = 2**20) -> tuple[float, float]:
     """Returns the accurate fault order by evaluating the event spectrum
     over the range (ordmin, ordmax). Density specifies the number of
     spectrum evaluations per order.
-    Also returns the spectrum magnitude at this order."""
+    Also returns the spectrum magnitude at this order.
+
+    The spectrum is evaluated in chunks of orders such that at most
+    max_elements (orders times events) are held in memory at once."""
     ords = np.arange(ordmin, ordmax, 1/density)
-    evsp = event_spectrum(ords, x)
-    ordf_idx = np.argmax(abs(evsp))
-    ordf = ords[ordf_idx]
-    return ordf, abs(evsp[ordf_idx])
+    x = np.asarray(x)
+    chunk = max(1, max_elements//max(1, len(x)))
+    mag = np.concatenate([abs(event_spectrum(ords[i:i+chunk], x))
+                          for i in range(0, len(ords), chunk)])
+    ordf_idx = np.argmax(mag)
+    return ords[ordf_idx], mag[ordf_idx]
 
 def fit_vonmises(f: float, x: npt.ArrayLike) -> tuple[float, float]:
     """Fit von Mises distribution to mapped locations x of frequency f.
