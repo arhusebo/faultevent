@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from collections.abc import Sequence
-import itertools
 from typing import Iterator, TypeVar, Optional
 import numpy as np
 import numpy.typing as npt
@@ -8,12 +7,17 @@ import numpy.typing as npt
 from . import Signal
 
 
-def detect(y, y1, y0):
-    """Performs detection with hysteresis.
-    """
+def detect(y, y1, y0 = None):
+    """Returns the detection state"""
     if y0==None: y0 = y1
-    d_iter = itertools.accumulate(y, lambda x1, x2: (y0 if x1 else y1) < x2, initial=y[0]>y1)
-    return list(d_iter)[1:]
+    if y0 > y1:
+        raise ValueError("y0 must be lower than y1")
+    on = y > y1
+    off = y <= y0
+    idx = np.where(on | off, np.arange(len(y)), -1)
+    np.maximum.accumulate(idx, out=idx)
+    state = np.where(idx >= 0, on[idx], False)
+    return state
 
 
 # Alternative detection using numpy ufunc:
